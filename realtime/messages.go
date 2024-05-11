@@ -1,8 +1,14 @@
 package realtime;
 
-type ConnectionMsg struct {
+type TemplateMsg struct {
    Event string `json:"event"`
    Topic string `json:"topic"`
+   Ref string `json:"ref"`
+}
+
+type ConnectionMsg struct {
+   TemplateMsg
+
    Payload struct {
       Data struct {
          Schema string `json:"schema"`
@@ -14,13 +20,11 @@ type ConnectionMsg struct {
          Errors string `json:"errors"`
       } `json:"data"`
    } `json:"payload"`
-   Ref string `json:"ref"`
 }
 
 type HearbeatMsg struct {
-   Event string `json:"event"`
-   Topic string `json:"topic"`
+   TemplateMsg
+
    Payload struct {
    } `json:"payload"`
-   Ref string `json:"ref"`
 }

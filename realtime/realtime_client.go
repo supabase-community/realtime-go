@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"nhooyr.io/websocket"
+	"nhooyr.io/websocket/wsjson"
 )
 
 type RealtimeClient struct {
@@ -39,7 +40,7 @@ func (client *RealtimeClient) Connect() error {
    if client.closed != nil {
       return nil
    }
-   
+  
    client.closed = make(chan struct{})
 
    // Attempt to dial the server
@@ -48,27 +49,29 @@ func (client *RealtimeClient) Connect() error {
       return fmt.Errorf("Cannot connect to the server: %w", err)
    }
 
-   // Start sending heartbeat to keep the connection alive
-   go client.startHeartbeats() 
-
    return nil
 }
 
 // Disconnect the client from the realtime server
 func (client *RealtimeClient) Disconnect() error {
-   err := client.conn.CloseNow()
+   if client.closed == nil {
+      return nil
+   }
+
+   close(client.closed)
+   err := client.conn.Close(websocket.StatusNormalClosure, "Closing the connection")
 
    return err
 }
 
 // Start sending heartbeats to the server to maintain connection
 func (client *RealtimeClient) startHeartbeats() {
-   isBeating := true
-   for isBeating {
+Loop:
+   for {
       select {
          case <-client.closed:
-            isBeating = false
-            break
+            client.closed = nil
+            break Loop
 
          default:
             client.sendHeartbeat()
@@ -79,6 +82,24 @@ func (client *RealtimeClient) startHeartbeats() {
 
 func (client *RealtimeClient) sendHeartbeat() {
    // Send the heartbeat
+   msg := HearbeatMsg{
+      TemplateMsg: TemplateMsg{
+         Event: HEARTBEAT_EVENT,
+         Topic: "phoenix",
+         Ref: "",
+      },
+      Payload: struct{}{},
+   }
+
+   ctx, cancel := context.WithCancel(context.Background())
+   defer cancel()
+
+   err := wsjson.Write(ctx, client.conn, msg)
+   if err != nil {
+      fmt.Println(websocket.CloseStatus(err))
+   }
+
+   fmt.Println(msg)
 }
 
 // Dial the server with a certain timeout in seconds
@@ -87,7 +108,7 @@ func (client *RealtimeClient) dialServer() error {
       return nil
    }
 
-   ctx, cancel := context.WithTimeout(context.Background(), client.dialTimeout * time.Second) 
+   ctx, cancel := context.WithTimeout(context.Background(), client.dialTimeout * time.Second)
    defer cancel()
 
    conn, _, err := websocket.Dial(ctx, client.Url, nil)
@@ -95,7 +116,7 @@ func (client *RealtimeClient) dialServer() error {
       return err
    }
 
-   client.conn = conn 
+   client.conn = conn
 
    return nil
 }
