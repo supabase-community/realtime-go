@@ -23,7 +23,6 @@ type RealtimeClient struct {
    logger            *log.Logger
    dialTimeout       time.Duration
    reconnectInterval time.Duration
-   reconnectDuration time.Duration
    heartbeatDuration time.Duration
    heartbeatInterval time.Duration
 }
@@ -44,7 +43,6 @@ func CreateRealtimeClient(projectRef string, apiKey string) *RealtimeClient {
       dialTimeout: 10 * time.Second,
       heartbeatDuration: 5   * time.Second,
       heartbeatInterval: 20  * time.Second,
-      reconnectDuration: 60  * time.Second,
       reconnectInterval: 500 * time.Millisecond,
    }
 }
