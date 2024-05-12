@@ -2,7 +2,9 @@ package realtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"sync"
 	"time"
@@ -49,7 +51,7 @@ func CreateRealtimeClient(projectRef string, apiKey string) *RealtimeClient {
 
 // Connect the client with the realtime server
 func (client *RealtimeClient) Connect() error {
-   if client.isAlive() {
+   if client.isClientAlive() {
       return nil
    }
 
@@ -74,37 +76,48 @@ func (client *RealtimeClient) Disconnect() error {
    client.mu.Lock()
    defer client.mu.Unlock()
 
-   if !client.isAlive() {
+   if !client.isClientAlive() {
       return nil
    }
 
    err := client.conn.Close(websocket.StatusNormalClosure, "Closing the connection")
    if err != nil {
-      client.logger.Println("Failed to close the connection")
-      client.logger.Printf("%v", err)
+      if !client.isConnectionAlive(err) {
+         client.logger.Println("Connection has already been terminated")
+         close(client.closed)
+      } else {
+         return fmt.Errorf("Failed to close the connection: %w", err)
+      }
    } else {
       close(client.closed)
    }
-
-   return fmt.Errorf("Failed to close the connection")
+   
+   return nil
 }
 
 // Start sending heartbeats to the server to maintain connection
 func (client *RealtimeClient) startHeartbeats() {
-   for client.isAlive() {
-      err1 := client.sendHeartbeat()
+   for client.isClientAlive() {
+      err := client.sendHeartbeat()
 
-      if err1 != nil {
-         client.logger.Println("Attempting to to send hearbeat again")
+      if err != nil {
+         if client.isConnectionAlive(err) {
+            client.logger.Println(err) 
+         } else {
+            client.logger.Println("Error: lost connection with the server")
+            client.logger.Println("Attempting to to send hearbeat again")
 
-         ctx, cancel := context.WithTimeout(context.Background(), client.reconnectDuration)
-         defer cancel()
+            ctx, cancel := context.WithCancel(context.Background())
+            defer cancel()
 
-         err2 := client.reConnect(ctx)
-         if err2 != nil {
-            client.logger.Printf("Error: %v", err2)
+            // there should never be an error returned, since it'll keep trying
+            _ = client.reconnect(ctx)
          }
       }
+
+      // in case where the client needs to reconnect with the server,
+      // the interval between heartbeats be however long it takes to
+      // reconnect plus the number of heartbeatInterval has gone by
       time.Sleep(client.heartbeatInterval)
    }
 }
@@ -123,14 +136,11 @@ func (client *RealtimeClient) sendHeartbeat() error {
    ctx, cancel := context.WithTimeout(context.Background(), client.heartbeatDuration)
    defer cancel()
 
-   client.logger.Print(msg)
+   client.logger.Print("Sending heartbeat")
 
    err := wsjson.Write(ctx, client.conn, msg)
    if err != nil {
-      client.logger.Printf("Error: %v", err)
-      client.logger.Printf("Failed to send heartbeat in %f seconds", client.heartbeatDuration.Seconds())
-
-      return err
+      return fmt.Errorf("Failed to send hearbeat in %f seconds: %w", client.heartbeatDuration.Seconds(), err)
    }
 
    return nil
@@ -141,7 +151,7 @@ func (client *RealtimeClient) dialServer() error {
    client.mu.Lock()
    defer client.mu.Unlock()
 
-   if client.isAlive() {
+   if client.isClientAlive() {
       return nil
    }
 
@@ -150,7 +160,7 @@ func (client *RealtimeClient) dialServer() error {
 
    conn, _, err := websocket.Dial(ctx, client.Url, nil)
    if err != nil {
-      return err
+      return fmt.Errorf("Failed to dial the server: %w", err)
    }
 
    client.conn = conn
@@ -159,17 +169,20 @@ func (client *RealtimeClient) dialServer() error {
 }
 
 // Keep trying to reconnect every 0.5 seconds until ctx is done/invalidated
-func (client *RealtimeClient) reConnect(ctx context.Context) error {
-   for client.isAlive() {
+func (client *RealtimeClient) reconnect(ctx context.Context) error {
+   for client.isClientAlive() {
+      client.logger.Println("Attempt to reconnect to the server")
+
       select {
          case <-ctx.Done():
-            return fmt.Errorf("Failed to reconnect to the server")
+            return fmt.Errorf("Failed to reconnect to the server within time limit")
          default:
             err := client.dialServer()
             if err == nil {
                return nil
             }
 
+            client.logger.Printf("Failed to reconnect to the server: %s", err)
             time.Sleep(client.reconnectInterval)
       }
    }
@@ -177,8 +190,8 @@ func (client *RealtimeClient) reConnect(ctx context.Context) error {
    return nil
 }
 
-// Check if there's a connection with the realtime server
-func (client *RealtimeClient) isAlive() bool {
+// Check if the realtime client has been killed
+func (client *RealtimeClient) isClientAlive() bool {
    if client.closed == nil {
       return false
    }
@@ -191,4 +204,12 @@ func (client *RealtimeClient) isAlive() bool {
    }
 
    return true
+}
+
+// The underlying package of websocket returns an error if the connection is
+// terminated on the server side. Therefore, the state of the connection can 
+// be achieved by investigating the error
+// Constraints: err must be returned from interacting with the connection
+func (client *RealtimeClient) isConnectionAlive(err error) bool {
+   return !errors.Is(err, io.EOF)
 }
