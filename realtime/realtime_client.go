@@ -25,6 +25,8 @@ type RealtimeClient struct {
    reconnectInterval time.Duration
    heartbeatDuration time.Duration
    heartbeatInterval time.Duration
+
+   topics            map[realtimeTopic]*RealtimeChannel
 }
 
 // Create a new RealtimeClient with user's speicfications
@@ -44,6 +46,7 @@ func CreateRealtimeClient(projectRef string, apiKey string) *RealtimeClient {
       heartbeatDuration: 5   * time.Second,
       heartbeatInterval: 20  * time.Second,
       reconnectInterval: 500 * time.Millisecond,
+      topics: make(map[realtimeTopic]*RealtimeChannel),
    }
 }
 
@@ -91,6 +94,15 @@ func (client *RealtimeClient) Disconnect() error {
    }
    
    return nil
+}
+
+// Create a new channel with given topic string
+func (client *RealtimeClient) Channel(topicStr string) *RealtimeChannel {
+   newTopic    := realtimeTopic(topicStr)
+   newChannel  := CreateRealtimeChannel(client, newTopic)
+   client.topics[newTopic] = newChannel
+
+   return newChannel
 }
 
 // Start sending heartbeats to the server to maintain connection
