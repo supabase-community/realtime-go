@@ -20,8 +20,16 @@ func CreateRealtimeChannel(client *RealtimeClient, topic realtimeTopic) *Realtim
 
 // Perform callbacks on specific events. Successive calls to On()
 // will result in multiple callbacks acting at the event
-func (channel *RealtimeChannel) On() {
+func (channel *RealtimeChannel) On(eventType string, filter map[string]string, callback func(interface{})) error {
+   if !verifyEventType(eventType) {
+      return fmt.Errorf("invalid event type: %s", eventType)
+   }
 
+   if err := verifyFilter(eventType, filter); err != nil {
+      return fmt.Errorf("Invalid filter criteria for %s event type: %w", eventType, err)
+   }
+
+   return nil
 }
 
 // Subscribe to the channel and start listening to events
