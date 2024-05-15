@@ -34,23 +34,19 @@ const (
    postgresChangesEventType string = "postgres_changes"
 )
 
-type eventFilter interface {
-   verifyFilter(map[string]string)
-}
-
 type postgresFilter struct {
-   Event    string
-   Schema   string
-   Table    string
-   Filter   string
+   Event    string   `supabase:"required"`
+   Schema   string   `supabase:"required"`
+   Table    string   `supabase:"optional"`
+   Filter   string   `supabase:"optional"`
 }
 
 type broadcastFilter struct {
-   event string
+   event string   `supabase:"required"`
 }
 
 type presenceFilter struct {
-   event string
+   event string   `supabase:"required"`
 }
 
 // Verify if the given event type is supported
@@ -91,10 +87,11 @@ func verifyFilter(eventType string, filter map[string]string) error {
 
    missingFields = make([]string, 0, filterType.NumField())
    for i := 0; i < filterType.NumField(); i++ {
-      currFieldName := filterType.Field(i).Name
-      currFieldName  = strings.ToLower(currFieldName)
+      currField      := filterType.Field(i)
+      currFieldName  := strings.ToLower(currField.Name)
+      isRequired     := currField.Tag.Get("supabase") == "required"
 
-      if _, ok := filter[currFieldName]; !ok {
+      if _, ok := filter[currFieldName]; !ok && isRequired {
          missingFields = append(missingFields, currFieldName)
       }
    }
