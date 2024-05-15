@@ -136,7 +136,7 @@ func (client *RealtimeClient) startHeartbeats() {
 func (client *RealtimeClient) sendHeartbeat() error {
    msg := HearbeatMsg{
       TemplateMsg: TemplateMsg{
-         Event: HEARTBEAT_EVENT,
+         Event: heartbeatEvent,
          Topic: "phoenix",
          Ref: "",
       },

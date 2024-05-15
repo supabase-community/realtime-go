@@ -1,18 +1,20 @@
-package realtime;
+package realtime
 
-// Channel Events
-const JOIN_EVENT = "phx_join"
-const REPLY_EVENT = "phx_reply"
+import (
+	"fmt"
+	"reflect"
+)
 
-// DB Subscription Events
-const POSTGRES_CHANGE_EVENT = "postgres_changes"
+// Events that are used to communicate with the server
+const (
+   joinEvent string = "phx_join"
+   replyEvent string = "phx_reply"
 
-// Broadcast Events
-const BROADCAST_EVENT = "broadcast"
+   // DB Subscription Events
+   postgresChangesEvent string = "postgres_changes"
 
-// Presence Events
-const PRESENCE_STATE_EVENT = "presence_state"
-const PRESENCE_DIFF_EVENT ="presence_diff"
+   // Broadcast Events
+   broadcastEvent string = "broadcast"
 
 // Other Events
 const SYS_EVENT = "system"
