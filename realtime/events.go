@@ -34,6 +34,10 @@ const (
    postgresChangesEventType string = "postgres_changes"
 )
 
+type eventFilter interface {
+   constructPayload() string
+}
+
 type postgresFilter struct {
    Event    string   `supabase:"required"`
    Schema   string   `supabase:"required"`
@@ -47,6 +51,18 @@ type broadcastFilter struct {
 
 type presenceFilter struct {
    event string   `supabase:"required"`
+}
+
+func (filter *postgresFilter) constructPayload() string {
+   return ""
+}
+
+func (filter *broadcastFilter) constructPayload() string {
+   return ""
+}
+
+func (filter *presenceFilter) constructPayload() string{
+   return ""
 }
 
 // Verify if the given event type is supported
@@ -64,41 +80,55 @@ func verifyEventType(eventType string) bool {
 
 // Enforce client's filter object to follow a specific message
 // structure of certain events. Check messages.go for more
-// information on the struct of each event. By default,
-// non-supported events will return an error
+// information on the struct of each event.
 // Only the following events are currently supported:
 //    + postgres_changes, broadcast, presence
-func verifyFilter(eventType string, filter map[string]string) error {
-   var filterType reflect.Type
+func createFilter(eventType string, filter map[string]string) (eventFilter, error) {
+   var filterType       reflect.Type   // Type for filter
+   var filterConValue   reflect.Value  // Concrete value
+   var filterPtrValue   reflect.Value  // Pointer value to the concrete value
    var missingFields []string
 
    switch eventType {
       case postgresChangesEvent:
-         filterType = reflect.TypeOf(postgresFilter{})
+         filterPtrValue = reflect.ValueOf(&postgresFilter{})
          break
       case broadcastEvent:
-         filterType = reflect.TypeOf(broadcastFilter{})
+         filterPtrValue = reflect.ValueOf(&broadcastFilter{})
          break
       case presenceEventType:
-         filterType = reflect.TypeOf(presenceFilter{})
+         filterPtrValue = reflect.ValueOf(&presenceFilter{})
       default:
-         return fmt.Errorf("Unsupported event type: %s", eventType)
+         return nil, fmt.Errorf("Unsupported event type: %s", eventType)
    }
 
-   missingFields = make([]string, 0, filterType.NumField())
+   // Get the underlying filter type to identify missing fields
+   filterConValue = filterPtrValue.Elem()
+   filterType     = filterConValue.Type()
+   missingFields  = make([]string, 0, filterType.NumField())
+
    for i := 0; i < filterType.NumField(); i++ {
       currField      := filterType.Field(i)
       currFieldName  := strings.ToLower(currField.Name)
       isRequired     := currField.Tag.Get("supabase") == "required"
 
-      if _, ok := filter[currFieldName]; !ok && isRequired {
+      val, ok        := filter[currFieldName]
+      if !ok && isRequired {
          missingFields = append(missingFields, currFieldName)
       }
+      
+      // Set field to empty string when value for currFieldName is missing
+      filterConValue.Field(i).SetString(val)
    }
 
    if len(missingFields) != 0 {
-      return fmt.Errorf("Criteria for %s is missing: %+v", eventType, missingFields)
+      return nil, fmt.Errorf("Criteria for %s is missing: %+v", eventType, missingFields)
    }
 
-   return nil
+   filterFinal, ok  := filterPtrValue.Interface().(eventFilter)
+   if !ok {
+      return nil, fmt.Errorf("Unexpected Error: cannot create event filter")
+   }
+
+   return filterFinal, nil
 }
