@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -26,7 +27,15 @@ type RealtimeClient struct {
    heartbeatDuration time.Duration
    heartbeatInterval time.Duration
 
+   msgQueue          *list.List
+
    topics            map[realtimeTopic]*RealtimeChannel
+}
+
+type binding struct {
+   msg      *ConnectionMsg
+   callback func(interface{})
+   channel  *RealtimeChannel
 }
 
 // Create a new RealtimeClient with user's speicfications
@@ -135,7 +144,7 @@ func (client *RealtimeClient) startHeartbeats() {
 // Send the heartbeat to the realtime server
 func (client *RealtimeClient) sendHeartbeat() error {
    msg := HearbeatMsg{
-      TemplateMsg: TemplateMsg{
+      TemplateMsg: &TemplateMsg{
          Event: heartbeatEvent,
          Topic: "phoenix",
          Ref: "",

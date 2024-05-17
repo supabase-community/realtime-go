@@ -24,12 +24,19 @@ func (channel *RealtimeChannel) On(eventType string, filter map[string]string, c
    if !verifyEventType(eventType) {
       return fmt.Errorf("invalid event type: %s", eventType)
    }
-   eventFilter, err := createFilter(eventType, filter)
+   eventFilter, err := createEventFilter(eventType, filter)
    if err != nil {
       return fmt.Errorf("Invalid filter criteria for %s event type: %w", eventType, err)
    }
 
-   fmt.Println(eventFilter)
+   fmt.Printf("%+v\n", eventFilter)
+   msg := createConnectionMessage(channel.topic, eventFilter)
+   fmt.Printf("%+v\n", msg)
+   // binding{
+   //    msg: msg,
+   //    callback: callback,
+   //    channel: channel,
+   // }
 
    return nil
 }
