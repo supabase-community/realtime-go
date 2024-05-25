@@ -48,16 +48,16 @@ type HearbeatMsg struct {
 }
 
 // create a template message
-func createTemplateMessage(event string, topic realtimeTopic) *TemplateMsg {
+func createTemplateMessage(event string, topic string) *TemplateMsg {
    return &TemplateMsg{
       Event: event,
-      Topic: string(topic),
+      Topic: topic,
       Ref: "",
    }
 }
 
 // create a connection message depending on event type
-func createConnectionMessage(topic realtimeTopic, filter eventFilter) *ConnectionMsg {
+func createConnectionMessage(topic string, filter eventFilter) *ConnectionMsg {
    msg := &ConnectionMsg{}
 
    // Common part across the three event type

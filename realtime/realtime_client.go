@@ -27,15 +27,14 @@ type RealtimeClient struct {
    heartbeatDuration time.Duration
    heartbeatInterval time.Duration
 
-   msgQueue          *list.List
-
-   topics            map[realtimeTopic]*RealtimeChannel
+   currentTopics        map[string]struct{}
+   bindingQueue         map[string]*list.List
+   bindingSubscription  map[string]*list.List
 }
 
 type binding struct {
    msg      *ConnectionMsg
-   callback func(interface{})
-   channel  *RealtimeChannel
+   callback func(any)
 }
 
 // Create a new RealtimeClient with user's speicfications
@@ -55,7 +54,7 @@ func CreateRealtimeClient(projectRef string, apiKey string) *RealtimeClient {
       heartbeatDuration: 5   * time.Second,
       heartbeatInterval: 20  * time.Second,
       reconnectInterval: 500 * time.Millisecond,
-      topics: make(map[realtimeTopic]*RealtimeChannel),
+      currentTopics: make(map[string]struct{}),
    }
 }
 
@@ -106,12 +105,15 @@ func (client *RealtimeClient) Disconnect() error {
 }
 
 // Create a new channel with given topic string
-func (client *RealtimeClient) Channel(topicStr string) *RealtimeChannel {
-   newTopic    := realtimeTopic(topicStr)
-   newChannel  := CreateRealtimeChannel(client, newTopic)
-   client.topics[newTopic] = newChannel
+func (client *RealtimeClient) Channel(newTopic string) (*RealtimeChannel, error) {
+   if _, ok := client.currentTopics[newTopic]; !ok {
+      return nil, fmt.Errorf("Error: channel with %v topic already created", newTopic)
+   }
 
-   return newChannel
+   newChannel  := CreateRealtimeChannel(client, newTopic)
+   client.currentTopics[newTopic] = struct{}{}
+
+   return newChannel, nil
 }
 
 // Start sending heartbeats to the server to maintain connection
@@ -223,6 +225,21 @@ func (client *RealtimeClient) isClientAlive() bool {
    }
 
    return true
+}
+
+// Add event bindings to the bindingQueue
+func (client *RealtimeClient) addBinding(topic string, newBinding binding) {
+   queue, ok := client.bindingQueue[topic]
+
+   // Add a queue for the topic if not already existed
+   if !ok {
+      queue = list.New()
+      client.bindingQueue[topic] = queue
+   } 
+
+   client.mu.Lock()
+   queue.PushBack(newBinding)
+   client.mu.Unlock()
 }
 
 // The underlying package of websocket returns an error if the connection is
