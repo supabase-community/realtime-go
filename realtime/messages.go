@@ -68,13 +68,17 @@ type SystemPayload struct {
 
 type PostgresCDCPayload struct {
    Data struct {
-      Schema     string            `json:"schema"`
-      Table      string            `json:"table"`
-      CommitTime string            `json:"commit_timestamp"`
-      EventType  string            `json:"eventType"`
-      New        map[string]string `json:"new"`
-      Old        map[string]string `json:"old"`
-      Errors     string            `json:"errors"`
+      Schema     string          `json:"schema"`
+      Table      string          `json:"table"`
+      CommitTime string          `json:"commit_timestamp"`
+      Record     map[string]any  `json:"record"`
+      Columns    []struct{
+         Name string `json:"name"`
+         Type string `json:"type"`
+      } `json:"columns"`
+      EventType  string          `json:"type"`
+      Old        map[string]any  `json:"old_record"`
+      Errors     string          `json:"errors"`
    } `json:"data"`
    IDs []int `json:"ids"`
 }

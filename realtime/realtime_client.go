@@ -259,6 +259,7 @@ func (client *RealtimeClient) processMessage(msg AbstractMsg) {
          }
          break
       case *PostgresCDCPayload:
+         client.logger.Printf("Processing: %+v", string(msg.Payload))
          if len(payload.IDs) == 0 {
             client.logger.Print("Unexected error: CDC message doesn't have any ids")
          }
