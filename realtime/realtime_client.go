@@ -29,8 +29,8 @@ type RealtimeClient struct {
    heartbeatInterval time.Duration
 
    bindingQueue         *list.List
-   bindingSubscription  map[string]binding
-   replyChan            chan string
+   bindingSubscription  map[int]binding
+   replyChan            chan int
    currentTopics        map[string][]string
 }
 
@@ -57,8 +57,9 @@ func CreateRealtimeClient(projectRef string, apiKey string) *RealtimeClient {
       heartbeatInterval: 20  * time.Second,
       reconnectInterval: 500 * time.Millisecond,
 
-      currentTopics: make(map[string][]string),
       bindingQueue: list.New(),
+      currentTopics: make(map[string][]string),
+      bindingSubscription: make(map[int]binding),
    }
 }
 
@@ -114,14 +115,15 @@ func (client *RealtimeClient) subscribe() error {
       client.Connect()
    }
 
-   if client.replyChan != nil {
-      client.replyChan = make(chan string)
+   if client.replyChan == nil {
+      client.replyChan = make(chan int)
    }
    bindNode := client.bindingQueue.Front()
 
    // TODO: take in a context to allow user to cancel subcribing
    // TODO: add a way to either roll back (unscribe) if an error encounters or 
    //       disconnect to client and close connection
+   // TODO: add a way to detect error if system returns status error
    for bindNode != nil {
       bind := bindNode.Value.(binding)
 
@@ -130,11 +132,13 @@ func (client *RealtimeClient) subscribe() error {
          return fmt.Errorf("Unable to subscribe to the event %v: %v", *bind.msg, err)
       }
 
+      client.logger.Print("Waiting for a reply")
       select {
          case rep, ok := <- client.replyChan:
             if !ok {
                return fmt.Errorf("Error: Unable to subscribe to the event %v succesfully", bind.msg)
             }
+            client.logger.Printf("Register Postgres ID: %v", rep)
             client.bindingSubscription[rep] = bind
             break
       }
@@ -236,8 +240,6 @@ func (client *RealtimeClient) startListening() {
 
 // Process the given message according certain events
 func (client *RealtimeClient) processMessage(msg AbstractMsg) {
-   client.logger.Printf("Header: %+v", *msg.TemplateMsg)
-   client.logger.Printf("Payload: %+v", string(msg.Payload))
    genericPayload, err := client.unmarshalPayload(msg)
    if err != nil {
       client.logger.Printf("Unable to process received message: %v", err)
@@ -247,7 +249,28 @@ func (client *RealtimeClient) processMessage(msg AbstractMsg) {
 
    switch payload := genericPayload.(type) {
       case *ReplyPayload:
-         client.logger.Printf("Processing: %+v", payload)
+         changes := payload.Response.PostgresChanges
+         status  := payload.Status
+
+         if len(changes) == 0  || status != "ok" || changes[0].ID == 0 {
+            client.logger.Printf("Received: %+v", payload)
+         } else {
+            client.replyChan <- changes[0].ID
+         }
+         break
+      case *PostgresCDCPayload:
+         if len(payload.IDs) == 0 {
+            client.logger.Print("Unexected error: CDC message doesn't have any ids")
+         }
+         for _, id := range payload.IDs {
+            bind, ok := client.bindingSubscription[id]
+            if !ok {
+               client.logger.Printf("Unexpected error: ID %v is not recognized", id)
+               continue
+            }
+            bind.callback(payload.Data)
+         }
+         // client.bindingSubscription[payload.IDs[0]]
          break
    }
 }
@@ -262,6 +285,7 @@ func (client *RealtimeClient) unmarshalPayload(msg AbstractMsg) (any, error) {
          payload = new(ReplyPayload)
          break
       case postgresChangesEvent:
+         payload = new(PostgresCDCPayload)
          break
       case systemEvent:
          payload = new(SystemPayload)

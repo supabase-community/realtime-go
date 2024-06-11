@@ -66,6 +66,19 @@ type SystemPayload struct {
    Status      string `json:"status"`
 }
 
+type PostgresCDCPayload struct {
+   Data struct {
+      Schema     string            `json:"schema"`
+      Table      string            `json:"table"`
+      CommitTime string            `json:"commit_timestamp"`
+      EventType  string            `json:"eventType"`
+      New        map[string]string `json:"new"`
+      Old        map[string]string `json:"old"`
+      Errors     string            `json:"errors"`
+   } `json:"data"`
+   IDs []int `json:"ids"`
+}
+
 // presence_state can contain any key. Hence map type instead of struct
 type PresenceStatePayload map[string]struct{
    Metas []struct{
