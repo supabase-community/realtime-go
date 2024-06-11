@@ -27,28 +27,22 @@ func (channel *RealtimeChannel) On(eventType string, filter map[string]string, c
       return fmt.Errorf("Invalid filter criteria for %s event type: %w", eventType, err)
    }
 
-   fmt.Printf("%+v\n", eventFilter)
    msg := createConnectionMessage(channel.topic, eventFilter)
-   fmt.Printf("%+v\n", msg)
    newBinding := binding{
       msg: msg,
       callback: callback,
    }
 
-   channel.client.addBinding(channel.topic, newBinding)
+   channel.client.addBinding(newBinding)
 
    return nil
 }
 
 // Subscribe to the channel and start listening to events
 func (channel *RealtimeChannel) Subscribe() error {
-	if channel.hasJoined {
-		return fmt.Errorf("The channel has already been subscribed")
-	}
-
-	if channel.client.isClientAlive() {
-
-	}
+   if err := channel.client.subscribe(); err != nil {
+      return fmt.Errorf("Channel %s failed to subscribe: %w", channel.topic, err)
+   }
 
 	return nil
 }

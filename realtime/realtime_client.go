@@ -3,6 +3,7 @@ package realtime
 import (
 	"container/list"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,9 +28,10 @@ type RealtimeClient struct {
    heartbeatDuration time.Duration
    heartbeatInterval time.Duration
 
-   currentTopics        map[string]struct{}
-   bindingQueue         map[string]*list.List
-   bindingSubscription  map[string]*list.List
+   bindingQueue         *list.List
+   bindingSubscription  map[string]binding
+   replyChan            chan string
+   currentTopics        map[string][]string
 }
 
 type binding struct {
@@ -54,7 +56,9 @@ func CreateRealtimeClient(projectRef string, apiKey string) *RealtimeClient {
       heartbeatDuration: 5   * time.Second,
       heartbeatInterval: 20  * time.Second,
       reconnectInterval: 500 * time.Millisecond,
-      currentTopics: make(map[string]struct{}),
+
+      currentTopics: make(map[string][]string),
+      bindingQueue: list.New(),
    }
 }
 
@@ -64,18 +68,18 @@ func (client *RealtimeClient) Connect() error {
       return nil
    }
 
+   // Change status of client to alive
+   client.closed = make(chan struct{})
+
    // Attempt to dial the server
    err := client.dialServer()
    if err != nil {
+      close(client.closed)
       return fmt.Errorf("Cannot connect to the server: %w", err)
    }
 
-   // client is only alive after the connection has been made
-   client.mu.Lock()
-   client.closed = make(chan struct{})
-   client.mu.Unlock()
-
    go client.startHeartbeats()
+   go client.startListening()
 
    return nil
 }
@@ -104,14 +108,50 @@ func (client *RealtimeClient) Disconnect() error {
    return nil
 }
 
-// Create a new channel with given topic string
-func (client *RealtimeClient) Channel(newTopic string) (*RealtimeChannel, error) {
-   if _, ok := client.currentTopics[newTopic]; !ok {
-      return nil, fmt.Errorf("Error: channel with %v topic already created", newTopic)
+// Begins subscribing to events in the bindingQueue
+func (client *RealtimeClient) subscribe() error {
+   if !client.isClientAlive() {
+      client.Connect()
    }
 
-   newChannel  := CreateRealtimeChannel(client, newTopic)
-   client.currentTopics[newTopic] = struct{}{}
+   if client.replyChan != nil {
+      client.replyChan = make(chan string)
+   }
+   bindNode := client.bindingQueue.Front()
+
+   // TODO: take in a context to allow user to cancel subcribing
+   // TODO: add a way to either roll back (unscribe) if an error encounters or 
+   //       disconnect to client and close connection
+   for bindNode != nil {
+      bind := bindNode.Value.(binding)
+
+      err := wsjson.Write(context.Background(), client.conn, bind.msg)
+      if err != nil {
+         return fmt.Errorf("Unable to subscribe to the event %v: %v", *bind.msg, err)
+      }
+
+      select {
+         case rep, ok := <- client.replyChan:
+            if !ok {
+               return fmt.Errorf("Error: Unable to subscribe to the event %v succesfully", bind.msg)
+            }
+            client.bindingSubscription[rep] = bind
+            break
+      }
+      bindNode = bindNode.Next()
+   }
+
+   return nil
+}
+
+// Create a new channel with given topic string
+func (client *RealtimeClient) Channel(newTopic string) (*RealtimeChannel, error) {
+   if _, ok := client.currentTopics[newTopic]; ok {
+      return nil, fmt.Errorf("Error: channel with %v topic already created", newTopic)
+   }
+   newChannel  := CreateRealtimeChannel(client, "realtime:" + newTopic)
+   // TODO: Fix currentTopics
+   client.currentTopics[newTopic] = []string{}
 
    return newChannel, nil
 }
@@ -167,12 +207,85 @@ func (client *RealtimeClient) sendHeartbeat() error {
    return nil
 }
 
+// Keep reading from the connection from the connection
+func (client *RealtimeClient) startListening() {
+   ctx := context.Background()
+
+   for client.isClientAlive() {
+      var msg AbstractMsg
+
+      // Read from the connection
+      err := wsjson.Read(ctx, client.conn, &msg)
+
+      // Check if there's a way to partially marshal bytes into an object
+      // Or check if polymorphism in go (from TemplateMsg to another type of messg)
+      if err != nil {
+         if client.isConnectionAlive(err) {
+            client.logger.Printf("Unexpected error while listening: %v", err) 
+         } else {
+            // Quick sleep to prevent taking up CPU cycles.
+            // Client should be able to reconnect automatically if it's still alive
+            time.Sleep(client.reconnectInterval)
+         }
+      } else {
+         // Spawn a new thread to process the server's respond
+         go client.processMessage(msg) 
+      }
+   }
+}
+
+// Process the given message according certain events
+func (client *RealtimeClient) processMessage(msg AbstractMsg) {
+   client.logger.Printf("Header: %+v", *msg.TemplateMsg)
+   client.logger.Printf("Payload: %+v", string(msg.Payload))
+   genericPayload, err := client.unmarshalPayload(msg)
+   if err != nil {
+      client.logger.Printf("Unable to process received message: %v", err)
+      client.logger.Printf("%v", genericPayload)
+      return
+   }
+
+   switch payload := genericPayload.(type) {
+      case *ReplyPayload:
+         client.logger.Printf("Processing: %+v", payload)
+         break
+   }
+}
+
+func (client *RealtimeClient) unmarshalPayload(msg AbstractMsg) (any, error) {
+   var payload any
+   var err error
+
+   // Parse the payload depending on the event type
+   switch msg.Event {
+      case replyEvent: 
+         payload = new(ReplyPayload)
+         break
+      case postgresChangesEvent:
+         break
+      case systemEvent:
+         payload = new(SystemPayload)
+         break
+      case presenceStateEvent:
+         payload = new(PresenceStatePayload)
+         break
+      default:
+         return struct{}{}, fmt.Errorf("Error: Unsupported event %v", msg.Event)
+   }
+
+   err = json.Unmarshal(msg.Payload, payload) 
+   if err != nil {
+      return struct{}{}, fmt.Errorf("Error: Unable to unmarshal payload: %v", err)
+   }
+   return payload, nil
+}
+
 // Dial the server with a certain timeout in seconds
 func (client *RealtimeClient) dialServer() error {
    client.mu.Lock()
    defer client.mu.Unlock()
 
-   if client.isClientAlive() {
+   if !client.isClientAlive() {
       return nil
    }
 
@@ -228,18 +341,8 @@ func (client *RealtimeClient) isClientAlive() bool {
 }
 
 // Add event bindings to the bindingQueue
-func (client *RealtimeClient) addBinding(topic string, newBinding binding) {
-   queue, ok := client.bindingQueue[topic]
-
-   // Add a queue for the topic if not already existed
-   if !ok {
-      queue = list.New()
-      client.bindingQueue[topic] = queue
-   } 
-
-   client.mu.Lock()
-   queue.PushBack(newBinding)
-   client.mu.Unlock()
+func (client *RealtimeClient) addBinding(newBinding binding) {
+   client.bindingQueue.PushBack(newBinding)
 }
 
 // The underlying package of websocket returns an error if the connection is

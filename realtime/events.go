@@ -40,8 +40,8 @@ type eventFilter interface {}
 type postgresFilter struct {
    Event  string `supabase:"required" json:"event"`
 	Schema string `supabase:"required" json:"schema"`
-	Table  string `supabase:"optional" json:"table"`
-	Filter string `supabase:"optional" json:"filter"`
+	Table  string `supabase:"optional" json:"table,omitempty"`
+	Filter string `supabase:"optional" json:"filter,omitempty"`
 }
 
 type broadcastFilter struct {
