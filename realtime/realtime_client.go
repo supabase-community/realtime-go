@@ -28,14 +28,13 @@ type RealtimeClient struct {
    heartbeatDuration time.Duration
    heartbeatInterval time.Duration
 
-   bindingQueue         *list.List
-   bindingSubscription  map[int]binding
-   replyChan            chan int
-   currentTopics        map[string][]string
+   replyChan            chan []int
+   currentTopics        map[string]*RealtimeChannel
 }
 
 type binding struct {
-   msg      *ConnectionMsg
+   eventType   string
+   filter      eventFilter
    callback func(any)
 }
 
@@ -57,9 +56,7 @@ func CreateRealtimeClient(projectRef string, apiKey string) *RealtimeClient {
       heartbeatInterval: 20  * time.Second,
       reconnectInterval: 500 * time.Millisecond,
 
-      bindingQueue: list.New(),
-      currentTopics: make(map[string][]string),
-      bindingSubscription: make(map[int]binding),
+      currentTopics: make(map[string]*RealtimeChannel),
    }
 }
 
@@ -110,42 +107,29 @@ func (client *RealtimeClient) Disconnect() error {
 }
 
 // Begins subscribing to events in the bindingQueue
-func (client *RealtimeClient) subscribe() error {
+func (client *RealtimeClient) subscribe(topic string, bindings *list.List, ctx context.Context) ([]int, error) {
    if !client.isClientAlive() {
       client.Connect()
    }
 
    if client.replyChan == nil {
-      client.replyChan = make(chan int)
-   }
-   bindNode := client.bindingQueue.Front()
-
-   // TODO: take in a context to allow user to cancel subcribing
-   // TODO: add a way to either roll back (unscribe) if an error encounters or 
-   //       disconnect to client and close connection
-   // TODO: add a way to detect error if system returns status error
-   for bindNode != nil {
-      bind := bindNode.Value.(binding)
-
-      err := wsjson.Write(context.Background(), client.conn, bind.msg)
-      if err != nil {
-         return fmt.Errorf("Unable to subscribe to the event %v: %v", *bind.msg, err)
-      }
-
-      client.logger.Print("Waiting for a reply")
-      select {
-         case rep, ok := <- client.replyChan:
-            if !ok {
-               return fmt.Errorf("Error: Unable to subscribe to the event %v succesfully", bind.msg)
-            }
-            client.logger.Printf("Register Postgres ID: %v", rep)
-            client.bindingSubscription[rep] = bind
-            break
-      }
-      bindNode = bindNode.Next()
+      client.replyChan = make(chan []int)
    }
 
-   return nil
+   msg := createConnectionMessage(topic, bindings)
+   err := wsjson.Write(context.Background(), client.conn, msg)
+   if err != nil {
+      return nil, fmt.Errorf("Unable to send the connection message: %v", err)
+   }
+   select {
+      case rep, ok := <- client.replyChan:
+         if !ok {
+            return nil, fmt.Errorf("Error: Unable to subscribe to the channel %v succesfully", msg.Topic)
+         }
+         return rep, nil
+      case <- ctx.Done():
+         return nil, fmt.Errorf("Error: Subscribing to to the channel %v has been canceled", msg.Topic)
+   }
 }
 
 // Create a new channel with given topic string
@@ -154,8 +138,7 @@ func (client *RealtimeClient) Channel(newTopic string) (*RealtimeChannel, error)
       return nil, fmt.Errorf("Error: channel with %v topic already created", newTopic)
    }
    newChannel  := CreateRealtimeChannel(client, "realtime:" + newTopic)
-   // TODO: Fix currentTopics
-   client.currentTopics[newTopic] = []string{}
+   client.currentTopics["realtime:" + newTopic] = newChannel
 
    return newChannel, nil
 }
@@ -255,23 +238,26 @@ func (client *RealtimeClient) processMessage(msg AbstractMsg) {
          if len(changes) == 0  || status != "ok" || changes[0].ID == 0 {
             client.logger.Printf("Received: %+v", payload)
          } else {
-            client.replyChan <- changes[0].ID
+            ids := make([]int, len(changes))
+            for i, change := range changes {
+               ids[i] = change.ID
+            }
+            client.replyChan <- ids
          }
          break
       case *PostgresCDCPayload:
-         client.logger.Printf("Processing: %+v", string(msg.Payload))
          if len(payload.IDs) == 0 {
-            client.logger.Print("Unexected error: CDC message doesn't have any ids")
+            client.logger.Print("Unexpected error: CDC message doesn't have any ids")
          }
          for _, id := range payload.IDs {
-            bind, ok := client.bindingSubscription[id]
+            targetedChannel, ok := client.currentTopics[msg.Topic]
             if !ok {
-               client.logger.Printf("Unexpected error: ID %v is not recognized", id)
+               client.logger.Printf("Error: Unrecognized topic %v", msg.Topic)
                continue
             }
-            bind.callback(payload.Data)
+
+            targetedChannel.routePostgresEvent(id, payload)
          }
-         // client.bindingSubscription[payload.IDs[0]]
          break
    }
 }
@@ -363,11 +349,6 @@ func (client *RealtimeClient) isClientAlive() bool {
    }
 
    return true
-}
-
-// Add event bindings to the bindingQueue
-func (client *RealtimeClient) addBinding(newBinding binding) {
-   client.bindingQueue.PushBack(newBinding)
 }
 
 // The underlying package of websocket returns an error if the connection is

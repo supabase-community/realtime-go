@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"container/list"
 	"encoding/json"
 )
 
@@ -109,21 +110,40 @@ func createTemplateMessage(event string, topic string) *TemplateMsg {
 }
 
 // create a connection message depending on event type
-func createConnectionMessage(topic string, filter eventFilter) *ConnectionMsg {
+func createConnectionMessage(topic string, bindings *list.List) *ConnectionMsg {
 	msg := &ConnectionMsg{}
+   bindNode := bindings.Front()
 
-	// Common part across the three event type
-	msg.TemplateMsg = createTemplateMessage(joinEvent, topic)
-	switch filter.(type) {
-	case postgresFilter:
-		msg.Payload.Config.PostgresChanges = []postgresFilter{filter.(postgresFilter)}
-		break
-	case broadcastFilter:
-		msg.Payload.Config.Broadcast.Self = true
-		break
-	case presenceFilter:
-		msg.Payload.Config.Presence.Key = ""
-		break
-	}
+   // Fill out the message template
+   msg.TemplateMsg = createTemplateMessage(joinEvent, topic)
+
+   // Fill out the payload
+   for bindNode != nil {
+      bind, ok := bindNode.Value.(binding)
+      if !ok {
+         panic("TYPE ASSERTION FAILED: expecting type binding")
+      } 
+
+      filter := bind.filter
+      switch filter.(type) {
+         case postgresFilter:
+            if msg.Payload.Config.PostgresChanges == nil {
+               msg.Payload.Config.PostgresChanges = make([]postgresFilter, 0, 1)
+            }
+            msg.Payload.Config.PostgresChanges = append(msg.Payload.Config.PostgresChanges, filter.(postgresFilter))
+            break
+         case broadcastFilter:
+            msg.Payload.Config.Broadcast.Self = true
+            break
+         case presenceFilter:
+            msg.Payload.Config.Presence.Key = ""
+            break
+         default:
+            panic("TYPE ASSERTION FAILED: expecting one of postgresFilter, broadcastFilter, or presenceFilter")
+      }
+
+      bindNode = bindNode.Next()
+   }
+
 	return msg
 }
