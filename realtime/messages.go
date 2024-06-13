@@ -77,7 +77,7 @@ type PostgresCDCPayload struct {
          Name string `json:"name"`
          Type string `json:"type"`
       } `json:"columns"`
-      EventType  string          `json:"type"`
+      ActionType  string          `json:"type"`
       Old        map[string]any  `json:"old_record"`
       Errors     string          `json:"errors"`
    } `json:"data"`

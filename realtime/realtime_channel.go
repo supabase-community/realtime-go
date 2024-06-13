@@ -43,6 +43,7 @@ func (channel *RealtimeChannel) On(eventType string, filter map[string]string, c
       filter: eventFilter,
       callback: callback,
    }
+
    channel.bindings.PushBack(newBinding)
 
    return nil
@@ -63,7 +64,6 @@ func (channel *RealtimeChannel) Subscribe(ctx context.Context) error {
    if err != nil {
       return fmt.Errorf("Channel %s failed to subscribe: %v", channel.topic, err)
    }
-   
    bindNode := channel.bindings.Front()
    for _, id := range ids {
       if bindNode == nil {
@@ -101,6 +101,20 @@ func (channel *RealtimeChannel) routePostgresEvent(id int, payload *PostgresCDCP
    if !ok {
       channel.client.logger.Printf("Error: Unrecognized id %v", id)
    }
+   
+   bindFilter, ok := binding.filter.(postgresFilter)
+   if !ok {
+      panic("TYPE ASSERTION FAILED: expecting type postgresFilter")
+   }
 
-   go binding.callback(payload)
+   // Match * | INSERT | UPDATE | DELETE
+   switch bindFilter.Event {
+      case "*":
+         fallthrough
+      case payload.Data.ActionType:
+         go binding.callback(payload)
+         break
+      default:
+         return 
+   }
 }

@@ -33,7 +33,7 @@ type RealtimeClient struct {
 }
 
 type binding struct {
-   eventType   string
+   eventType  string
    filter      eventFilter
    callback func(any)
 }
