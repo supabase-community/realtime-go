@@ -31,12 +31,6 @@ type RealtimeClient struct {
    currentTopics        map[string]*RealtimeChannel
 }
 
-type binding struct {
-   eventType  string
-   filter      eventFilter
-   callback func(any)
-}
-
 // Create a new RealtimeClient with user's speicfications
 func CreateRealtimeClient(projectRef string, apiKey string) *RealtimeClient {
    realtimeUrl := fmt.Sprintf(

@@ -17,6 +17,13 @@ type RealtimeChannel struct {
    postgresBindingRoute    map[int]*binding
 }
 
+// Bind an event with the user's callback function
+type binding struct {
+   eventType   string
+   filter      eventFilter
+   callback    func(any)
+}
+
 // Initialize a new channel
 func CreateRealtimeChannel(client *RealtimeClient, topic string) *RealtimeChannel {
 	return &RealtimeChannel{
