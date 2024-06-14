@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
 type RealtimeChannel struct {
@@ -10,6 +11,7 @@ type RealtimeChannel struct {
 	client         *RealtimeClient
 	hasSubscribed  bool
 
+   rwMu                    sync.RWMutex
    numBindings             int
    bindings                map[string][]*binding
    postgresBindingRoute    map[int]*binding
@@ -107,14 +109,20 @@ func (channel *RealtimeChannel) Unsubscribe(ctx context.Context) {
 	}
 
    // Refresh all the binding routes
+   channel.rwMu.Lock()
    clear(channel.postgresBindingRoute)
+   channel.rwMu.Unlock()
+
    channel.client.unsubscribe(channel.topic, ctx)
    channel.hasSubscribed = false
 }
 
 // Route the id of triggered event to appropriate callback
 func (channel *RealtimeChannel) routePostgresEvent(id int, payload *PostgresCDCPayload) {
+   channel.rwMu.RLock()
    binding, ok := channel.postgresBindingRoute[id] 
+   channel.rwMu.RUnlock()
+
    if !ok {
       channel.client.logger.Printf("Error: Unrecognized id %v", id)
       return
