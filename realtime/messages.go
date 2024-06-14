@@ -1,7 +1,6 @@
 package realtime
 
 import (
-	"container/list"
 	"encoding/json"
 )
 
@@ -110,20 +109,13 @@ func createTemplateMessage(event string, topic string) *TemplateMsg {
 }
 
 // create a connection message depending on event type
-func createConnectionMessage(topic string, bindings *list.List) *ConnectionMsg {
+func createConnectionMessage(topic string, bindings []*binding) *ConnectionMsg {
 	msg := &ConnectionMsg{}
-   bindNode := bindings.Front()
-
    // Fill out the message template
    msg.TemplateMsg = createTemplateMessage(joinEvent, topic)
 
    // Fill out the payload
-   for bindNode != nil {
-      bind, ok := bindNode.Value.(binding)
-      if !ok {
-         panic("TYPE ASSERTION FAILED: expecting type binding")
-      } 
-
+   for _, bind := range bindings {
       filter := bind.filter
       switch filter.(type) {
          case postgresFilter:
@@ -141,8 +133,6 @@ func createConnectionMessage(topic string, bindings *list.List) *ConnectionMsg {
          default:
             panic("TYPE ASSERTION FAILED: expecting one of postgresFilter, broadcastFilter, or presenceFilter")
       }
-
-      bindNode = bindNode.Next()
    }
 
 	return msg

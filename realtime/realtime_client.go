@@ -1,7 +1,6 @@
 package realtime
 
 import (
-	"container/list"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,7 +27,7 @@ type RealtimeClient struct {
    heartbeatDuration time.Duration
    heartbeatInterval time.Duration
 
-   replyChan            chan []int
+   replyChan            chan *ReplyPayload
    currentTopics        map[string]*RealtimeChannel
 }
 
@@ -107,13 +106,13 @@ func (client *RealtimeClient) Disconnect() error {
 }
 
 // Begins subscribing to events in the bindingQueue
-func (client *RealtimeClient) subscribe(topic string, bindings *list.List, ctx context.Context) ([]int, error) {
+func (client *RealtimeClient) subscribe(topic string, bindings []*binding, ctx context.Context) (*ReplyPayload, error) {
    if !client.isClientAlive() {
       client.Connect()
    }
 
    if client.replyChan == nil {
-      client.replyChan = make(chan []int)
+      client.replyChan = make(chan *ReplyPayload)
    }
 
    msg := createConnectionMessage(topic, bindings)
@@ -238,11 +237,7 @@ func (client *RealtimeClient) processMessage(msg AbstractMsg) {
          if len(changes) == 0  || status != "ok" || changes[0].ID == 0 {
             client.logger.Printf("Received: %+v", payload)
          } else {
-            ids := make([]int, len(changes))
-            for i, change := range changes {
-               ids[i] = change.ID
-            }
-            client.replyChan <- ids
+            client.replyChan <- payload
          }
          break
       case *PostgresCDCPayload:

@@ -1,18 +1,18 @@
 package realtime
 
 import (
-	"container/list"
 	"context"
 	"fmt"
 )
 
 type RealtimeChannel struct {
-	topic     string
-	client    *RealtimeClient
-
-   bindings       *list.List 
-   bindingsMap    map[int]binding
+	topic          string
+	client         *RealtimeClient
 	hasSubscribed  bool
+
+   numBindings             int
+   bindings                map[string][]*binding
+   postgresBindingRoute    map[int]*binding
 }
 
 // Initialize a new channel
@@ -20,8 +20,9 @@ func CreateRealtimeChannel(client *RealtimeClient, topic string) *RealtimeChanne
 	return &RealtimeChannel{
 		client: client,
 		topic:  topic,
-      bindings: list.New(),
-      bindingsMap: make(map[int]binding),
+      numBindings: 0,
+      bindings: make(map[string][]*binding),
+      postgresBindingRoute: make(map[int]*binding),
       hasSubscribed: false,
 	}
 }
@@ -38,13 +39,14 @@ func (channel *RealtimeChannel) On(eventType string, filter map[string]string, c
       return fmt.Errorf("Invalid filter criteria for %s event type: %w", eventType, err)
    }
 
-   newBinding := binding{
+   newBinding := &binding{
       eventType: eventType,
       filter: eventFilter,
       callback: callback,
    }
 
-   channel.bindings.PushBack(newBinding)
+   channel.numBindings += 1
+   channel.bindings[eventType] = append(channel.bindings[eventType], newBinding)
 
    return nil
 }
@@ -56,31 +58,41 @@ func (channel *RealtimeChannel) Subscribe(ctx context.Context) error {
    }
 
    // Do nothing if there are no bindings
-   if channel.bindings.Len() == 0 {
+   if channel.numBindings == 0 {
       return nil
    }
 
-   ids, err := channel.client.subscribe(channel.topic, channel.bindings, ctx)
+   // Flatten all type of bindings into one slice
+   allBindings := make([]*binding, channel.numBindings)
+   for _, eventType := range []string{postgresChangesEventType, broadcastEventType, presenceEventType} {
+      copy(allBindings, channel.bindings[eventType])
+   }
+
+   respPayload, err := channel.client.subscribe(channel.topic, allBindings, ctx)
    if err != nil {
       return fmt.Errorf("Channel %s failed to subscribe: %v", channel.topic, err)
    }
-   bindNode := channel.bindings.Front()
-   for _, id := range ids {
-      if bindNode == nil {
-         channel.Unsubscribe()
-         return fmt.Errorf("Error: the number subscribed events are not equal to the total events")
-      }
 
-      binding, ok := bindNode.Value.(binding)
+   // Verify and map postgres events. If there are any mismatch, channel will
+   // rollback, and unsubscribe to the events.
+   changes := respPayload.Response.PostgresChanges
+   postgresBindings := channel.bindings[postgresChangesEventType]
+   if len(postgresBindings) != len(changes) {
+      channel.Unsubscribe()
+      return fmt.Errorf("Server returns the wrong number of subscribed events: %v events", len(changes))
+   }
+
+   for i, change := range changes {
+      bindingFilter, ok := postgresBindings[i].filter.(postgresFilter)
       if !ok {
-         panic("TYPE ASSERTION FAILED: expecting type binding")
+         panic("TYPE ASSERTION FAILED: expecting type postgresFilter")
       }
-
-      if binding.eventType == postgresChangesEvent {
-         channel.bindingsMap[id] = binding;
+      if change.Schema != bindingFilter.Schema || change.Event  != bindingFilter.Event ||
+         change.Table  != bindingFilter.Table  || change.Filter != bindingFilter.Filter {
+         channel.Unsubscribe()
+         return fmt.Errorf("Configuration mismatch between server's event and channel's event")
       }
-
-      bindNode = bindNode.Next()
+      channel.postgresBindingRoute[change.ID] = postgresBindings[i]
    }
 
    channel.hasSubscribed = true
@@ -97,7 +109,7 @@ func (channel *RealtimeChannel) Unsubscribe() {
 
 // Route the id of triggered event to appropriate callback
 func (channel *RealtimeChannel) routePostgresEvent(id int, payload *PostgresCDCPayload) {
-   binding, ok := channel.bindingsMap[id] 
+   binding, ok := channel.postgresBindingRoute[id] 
    if !ok {
       channel.client.logger.Printf("Error: Unrecognized id %v", id)
    }
