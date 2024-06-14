@@ -10,6 +10,8 @@ import (
 const (
 	joinEvent  string = "phx_join"
 	replyEvent string = "phx_reply"
+	leaveEvent string = "phx_leave"
+	closeEvent string = "phx_close"
 
 	// DB Subscription Events
 	postgresChangesEvent string = "postgres_changes"

@@ -92,7 +92,8 @@ type PresenceStatePayload map[string]struct{
    } `json:"metas,omitempty"`
 }
 
-type HearbeatMsg struct {
+// Messages that have empty payload
+type BlankMsg struct {
 	*TemplateMsg
 
 	Payload struct {

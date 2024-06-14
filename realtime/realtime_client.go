@@ -105,7 +105,7 @@ func (client *RealtimeClient) Disconnect() error {
    return nil
 }
 
-// Begins subscribing to events in the bindingQueue
+// Begins subscribing to events
 func (client *RealtimeClient) subscribe(topic string, bindings []*binding, ctx context.Context) (*ReplyPayload, error) {
    if !client.isClientAlive() {
       client.Connect()
@@ -128,6 +128,24 @@ func (client *RealtimeClient) subscribe(topic string, bindings []*binding, ctx c
          return rep, nil
       case <- ctx.Done():
          return nil, fmt.Errorf("Error: Subscribing to to the channel %v has been canceled", msg.Topic)
+   }
+}
+
+// Unsubscribe from events
+func (client *RealtimeClient) unsubscribe(topic string, ctx context.Context) {
+   // There's no connection, so no need to unsubscribe from anything
+   if !client.isClientAlive() {
+      return
+   }
+
+   leaveMsg := BlankMsg{
+      TemplateMsg: createTemplateMessage(leaveEvent, topic),
+      Payload: struct{}{},
+   } 
+
+   err := wsjson.Write(context.Background(), client.conn, leaveMsg)
+   if err != nil {
+      fmt.Printf("Unexpected error: %v", err)
    }
 }
 
@@ -171,12 +189,8 @@ func (client *RealtimeClient) startHeartbeats() {
 
 // Send the heartbeat to the realtime server
 func (client *RealtimeClient) sendHeartbeat() error {
-   msg := HearbeatMsg{
-      TemplateMsg: &TemplateMsg{
-         Event: heartbeatEvent,
-         Topic: "phoenix",
-         Ref: "",
-      },
+   msg := BlankMsg{
+      TemplateMsg: createTemplateMessage(heartbeatEvent, "phoenix"),
       Payload: struct{}{},
    }
 
@@ -235,7 +249,7 @@ func (client *RealtimeClient) processMessage(msg AbstractMsg) {
          status  := payload.Status
 
          if len(changes) == 0  || status != "ok" || changes[0].ID == 0 {
-            client.logger.Printf("Received: %+v", payload)
+            client.logger.Printf("Received %v: %+v", msg.Event, payload)
          } else {
             client.replyChan <- payload
          }
@@ -263,6 +277,8 @@ func (client *RealtimeClient) unmarshalPayload(msg AbstractMsg) (any, error) {
 
    // Parse the payload depending on the event type
    switch msg.Event {
+      case closeEvent:
+         fallthrough
       case replyEvent: 
          payload = new(ReplyPayload)
          break

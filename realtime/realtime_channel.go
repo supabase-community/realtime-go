@@ -78,7 +78,7 @@ func (channel *RealtimeChannel) Subscribe(ctx context.Context) error {
    changes := respPayload.Response.PostgresChanges
    postgresBindings := channel.bindings[postgresChangesEventType]
    if len(postgresBindings) != len(changes) {
-      channel.Unsubscribe()
+      channel.Unsubscribe(ctx)
       return fmt.Errorf("Server returns the wrong number of subscribed events: %v events", len(changes))
    }
 
@@ -89,7 +89,7 @@ func (channel *RealtimeChannel) Subscribe(ctx context.Context) error {
       }
       if change.Schema != bindingFilter.Schema || change.Event  != bindingFilter.Event ||
          change.Table  != bindingFilter.Table  || change.Filter != bindingFilter.Filter {
-         channel.Unsubscribe()
+         channel.Unsubscribe(ctx)
          return fmt.Errorf("Configuration mismatch between server's event and channel's event")
       }
       channel.postgresBindingRoute[change.ID] = postgresBindings[i]
@@ -100,10 +100,15 @@ func (channel *RealtimeChannel) Subscribe(ctx context.Context) error {
 	return nil
 }
 
-func (channel *RealtimeChannel) Unsubscribe() {
-	if channel.client.isClientAlive() {
-
+// Unsubscribe from the channel and stop listening to events
+func (channel *RealtimeChannel) Unsubscribe(ctx context.Context) {
+	if !channel.hasSubscribed {
+      return
 	}
+
+   // Refresh all the binding routes
+   clear(channel.postgresBindingRoute)
+   channel.client.unsubscribe(channel.topic, ctx)
    channel.hasSubscribed = false
 }
 
@@ -112,6 +117,7 @@ func (channel *RealtimeChannel) routePostgresEvent(id int, payload *PostgresCDCP
    binding, ok := channel.postgresBindingRoute[id] 
    if !ok {
       channel.client.logger.Printf("Error: Unrecognized id %v", id)
+      return
    }
    
    bindFilter, ok := binding.filter.(postgresFilter)
