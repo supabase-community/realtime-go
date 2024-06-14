@@ -138,12 +138,12 @@ func (client *RealtimeClient) unsubscribe(topic string, ctx context.Context) {
       return
    }
 
-   leaveMsg := BlankMsg{
-      TemplateMsg: createTemplateMessage(leaveEvent, topic),
+   leaveMsg := &Msg{
+      Metadata: *createMsgMetadata(leaveEvent, topic),
       Payload: struct{}{},
    } 
 
-   err := wsjson.Write(context.Background(), client.conn, leaveMsg)
+   err := wsjson.Write(ctx, client.conn, leaveMsg)
    if err != nil {
       fmt.Printf("Unexpected error: %v", err)
    }
@@ -189,8 +189,8 @@ func (client *RealtimeClient) startHeartbeats() {
 
 // Send the heartbeat to the realtime server
 func (client *RealtimeClient) sendHeartbeat() error {
-   msg := BlankMsg{
-      TemplateMsg: createTemplateMessage(heartbeatEvent, "phoenix"),
+   msg := &Msg{
+      Metadata: *createMsgMetadata(heartbeatEvent, "phoenix"),
       Payload: struct{}{},
    }
 
@@ -212,7 +212,7 @@ func (client *RealtimeClient) startListening() {
    ctx := context.Background()
 
    for client.isClientAlive() {
-      var msg AbstractMsg
+      var msg RawMsg
 
       // Read from the connection
       err := wsjson.Read(ctx, client.conn, &msg)
@@ -235,7 +235,7 @@ func (client *RealtimeClient) startListening() {
 }
 
 // Process the given message according certain events
-func (client *RealtimeClient) processMessage(msg AbstractMsg) {
+func (client *RealtimeClient) processMessage(msg RawMsg) {
    genericPayload, err := client.unmarshalPayload(msg)
    if err != nil {
       client.logger.Printf("Unable to process received message: %v", err)
@@ -271,7 +271,7 @@ func (client *RealtimeClient) processMessage(msg AbstractMsg) {
    }
 }
 
-func (client *RealtimeClient) unmarshalPayload(msg AbstractMsg) (any, error) {
+func (client *RealtimeClient) unmarshalPayload(msg RawMsg) (any, error) {
    var payload any
    var err error
 
