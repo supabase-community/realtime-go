@@ -2,9 +2,11 @@ package realtime
 
 import (
 	"encoding/json"
+	"strconv"
+	"time"
 )
 
-// This is a general message strucutre. It follows the message protocol 
+// This is a general message strucutre. It follows the message protocol
 // of the phoenix server:
 /*
    {
@@ -120,6 +122,7 @@ func createConnectionMessage(topic string, bindings []*binding) *Msg {
 
    // Fill out the message template
    msg.Metadata = *createMsgMetadata(joinEvent, topic)
+   msg.Metadata.Ref = strconv.FormatInt(time.Now().Unix(), 10)
 
    // Fill out the payload
    payload := &ConnectionPayload{}
