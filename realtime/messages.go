@@ -105,6 +105,14 @@ type PostgresCDCPayload struct {
    IDs []int `json:"ids"`
 }
 
+// Payload of the server's response when there is a broadcast event. 
+// More info: https://supabase.com/docs/guides/realtime/protocol#broadcast-message
+type BroadcastPayload struct {
+   Event    string `json:"event"`
+   Payload  any    `json:"payload"`
+   Type     string `json:"broadcast"`
+}
+
 // create a template message
 func createMsgMetadata(event string, topic string) *Metadata {
 	return &Metadata{

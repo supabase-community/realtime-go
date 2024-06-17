@@ -262,6 +262,13 @@ func (client *RealtimeClient) processMessage(msg RawMsg) {
             targetedChannel.routePostgresEvent(id, payload)
          }
          break
+      case *BroadcastPayload:
+         targetedChannel, ok := client.currentTopics[msg.Topic]
+         if !ok {
+            client.logger.Printf("Error: Unrecognized topic %v", msg.Topic)
+         }
+         targetedChannel.routeBroadcastEvent(payload)
+         break
    }
 }
 
@@ -284,6 +291,9 @@ func (client *RealtimeClient) unmarshalPayload(msg RawMsg) (any, error) {
          break
       case presenceStateEvent:
          payload = new(PresenceStatePayload)
+         break
+      case broadcastEvent:
+         payload = new(BroadcastPayload)
          break
       default:
          return struct{}{}, fmt.Errorf("Error: Unsupported event %v", msg.Event)

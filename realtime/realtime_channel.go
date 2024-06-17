@@ -40,7 +40,7 @@ func CreateRealtimeChannel(client *RealtimeClient, topic string) *RealtimeChanne
 // will result in multiple callbacks acting at the event
 func (channel *RealtimeChannel) On(eventType string, filter map[string]string, callback func(any)) error {
    if !verifyEventType(eventType) {
-      return fmt.Errorf("invalid event type: %s", eventType)
+      return fmt.Errorf("Invalid event type: %s", eventType)
    }
 
    eventFilter, err := createEventFilter(eventType, filter)
@@ -149,5 +149,26 @@ func (channel *RealtimeChannel) routePostgresEvent(id int, payload *PostgresCDCP
          break
       default:
          return 
+   }
+}
+
+// Route the broadcast event to the right callback
+func (channel *RealtimeChannel) routeBroadcastEvent(payload *BroadcastPayload) {
+   hasFound := false
+   // TODO: Instead of go through them one by one, use a hashmap to store the 
+   // broadcast bindings instead
+   for _, bind := range channel.bindings[broadcastEventType] {
+      filter, ok := bind.filter.(broadcastFilter)
+      if !ok {
+         panic("TYPE ASSERTION FAILED: expecting type broadcastFilter")
+      }
+      if filter.Event == payload.Event {
+         bind.callback(payload)
+         hasFound = true
+      }
+   }
+
+   if !hasFound {
+      channel.client.logger.Printf("Error: Failed to find the broadcast event %v", payload.Event)
    }
 }
