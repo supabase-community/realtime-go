@@ -54,6 +54,13 @@ type presenceFilter struct {
 	Event string `supabase:"required"`
 }
 
+// Custom event that can be sent to the server
+type CustomEvent struct {
+   Event    string   `json:"event"`
+   Payload  any      `json:"payload"`
+   Type     string   `json:"type"`
+}
+
 // Verify if the given event type is supported
 func verifyEventType(eventType string) bool {
 	switch eventType {

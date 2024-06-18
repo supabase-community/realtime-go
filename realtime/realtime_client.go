@@ -140,6 +140,25 @@ func (client *RealtimeClient) unsubscribe(topic string, ctx context.Context) {
    }
 }
 
+// Send an event to the server
+func (client *RealtimeClient) send(msg *Msg) error {
+   var err error
+   if !client.isClientAlive() {
+      err = client.Connect()
+   }
+
+   if err != nil {
+      return err
+   } 
+
+   err = wsjson.Write(context.Background(), client.conn, msg)
+   if err != nil {
+      return fmt.Errorf("Unable to send the connection message: %v", err)
+   }
+
+   return nil
+}
+
 // Create a new channel with given topic string
 func (client *RealtimeClient) Channel(newTopic string) (*RealtimeChannel, error) {
    if _, ok := client.currentTopics[newTopic]; ok {

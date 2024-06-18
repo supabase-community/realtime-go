@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"strconv"
+	"time"
 )
 
 type RealtimeChannel struct {
@@ -122,6 +124,21 @@ func (channel *RealtimeChannel) Unsubscribe(ctx context.Context) {
 
    channel.client.unsubscribe(channel.topic, ctx)
    channel.hasSubscribed = false
+}
+
+// Send a custom event to the server
+func (channel *RealtimeChannel) Send(event CustomEvent) error {
+   if !verifyEventType(event.Type) {
+      return fmt.Errorf("Invalid event type: %s", event.Type)
+   }
+
+   metadata := createMsgMetadata(event.Type, channel.topic)
+   msg := &Msg{
+      Metadata: *metadata,
+      Payload: event,
+   }
+   msg.Metadata.Ref = strconv.FormatInt(time.Now().Unix(), 10)
+   return channel.client.send(msg)
 }
 
 // Route the id of triggered event to appropriate callback
