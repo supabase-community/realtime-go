@@ -50,6 +50,7 @@ func CreateRealtimeClient(projectRef string, apiKey string) *RealtimeClient {
       reconnectInterval: 500 * time.Millisecond,
 
       currentTopics: make(map[string]*RealtimeChannel),
+      replyChan: make(chan *ReplyPayload),
    }
 }
 
@@ -105,18 +106,14 @@ func (client *RealtimeClient) subscribe(topic string, bindings []*binding, ctx c
       client.Connect()
    }
 
-   if client.replyChan == nil {
-      client.replyChan = make(chan *ReplyPayload)
-   }
-
    msg := createConnectionMessage(topic, bindings)
    err := wsjson.Write(context.Background(), client.conn, msg)
    if err != nil {
       return nil, fmt.Errorf("Unable to send the connection message: %v", err)
    }
    select {
-      case rep, ok := <- client.replyChan:
-         if !ok {
+      case rep := <- client.replyChan:
+         if rep == nil {
             return nil, fmt.Errorf("Error: Unable to subscribe to the channel %v succesfully", msg.Topic)
          }
          return rep, nil
@@ -187,6 +184,7 @@ func (client *RealtimeClient) sendHeartbeat() error {
       Metadata: *createMsgMetadata(heartbeatEvent, "phoenix"),
       Payload: struct{}{},
    }
+   msg.Metadata.Ref = heartbeatEvent
 
    ctx, cancel := context.WithTimeout(context.Background(), client.heartbeatDuration)
    defer cancel()
@@ -239,12 +237,15 @@ func (client *RealtimeClient) processMessage(msg RawMsg) {
 
    switch payload := genericPayload.(type) {
       case *ReplyPayload:
-         changes := payload.Response.PostgresChanges
          status  := payload.Status
 
-         if len(changes) == 0  || status != "ok" || changes[0].ID == 0 {
-            client.logger.Printf("Received %v: %+v", msg.Event, payload)
-         } else {
+         if msg.Ref == heartbeatEvent && status != "ok" {
+            client.logger.Printf("Heartbeat failure from server: %v", payload)
+         } else if msg.Ref == heartbeatEvent && status == "ok" {
+            client.logger.Printf("Heartbeat success from server: %v", payload)
+         } else if msg.Ref != heartbeatEvent && status != "ok" {
+            client.replyChan <- nil 
+         } else if msg.Ref != heartbeatEvent && status == "ok" {
             client.replyChan <- payload
          }
          break
