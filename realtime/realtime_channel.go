@@ -73,8 +73,10 @@ func (channel *RealtimeChannel) Subscribe(ctx context.Context) error {
 
    // Flatten all type of bindings into one slice
    allBindings := make([]*binding, channel.numBindings)
+   startIdx    := 0
    for _, eventType := range []string{postgresChangesEventType, broadcastEventType, presenceEventType} {
-      copy(allBindings, channel.bindings[eventType])
+      copy(allBindings[startIdx:], channel.bindings[eventType])
+      startIdx += len(channel.bindings)
    }
 
    respPayload, err := channel.client.subscribe(channel.topic, allBindings, ctx)
