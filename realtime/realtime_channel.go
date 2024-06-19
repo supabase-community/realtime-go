@@ -3,8 +3,9 @@ package realtime
 import (
 	"context"
 	"fmt"
-	"sync"
+	"reflect"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -126,19 +127,24 @@ func (channel *RealtimeChannel) Unsubscribe(ctx context.Context) {
    channel.hasSubscribed = false
 }
 
-// Send a custom event to the server
+// Send a custom event to the server. Payload must be either:
 func (channel *RealtimeChannel) Send(event CustomEvent, ctx context.Context) error {
    if !verifyEventType(event.Type) {
       return fmt.Errorf("Invalid event type: %s", event.Type)
    }
 
-   metadata := createMsgMetadata(event.Type, channel.topic)
+   // Verify that payload is a struct
+   if reflect.TypeOf(event.Payload).Kind() != reflect.Struct {
+      return fmt.Errorf("Payload must be of kind Struct. Invalid payload: %+v", event.Payload)
+   }
+   
+   metadata := createMsgMetadata(event.Event, channel.topic)
    msg := &Msg{
       Metadata: *metadata,
-      Payload: event,
+      Payload: event.Payload,
    }
    msg.Metadata.Ref = strconv.FormatInt(time.Now().Unix(), 10)
-   return channel.client.send(msg, ctx)
+   return channel.client.send(msg, channel.hasSubscribed, ctx)
 }
 
 // Route the id of triggered event to appropriate callback
@@ -186,6 +192,7 @@ func (channel *RealtimeChannel) routeBroadcastEvent(payload *BroadcastPayload) {
    }
 
    if !hasFound {
+      channel.client.logger.Printf("Error: %+v", payload)
       channel.client.logger.Printf("Error: Failed to find the broadcast event %v", payload.Event)
    }
 }

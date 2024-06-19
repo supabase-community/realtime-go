@@ -112,7 +112,7 @@ type PostgresCDCPayload struct {
 type BroadcastPayload struct {
    Event    string `json:"event"`
    Payload  any    `json:"payload"`
-   Type     string `json:"broadcast"`
+   Type     string `json:"type"`
 }
 
 // create a template message
