@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -39,6 +40,7 @@ func CreateRealtimeChannel(client *RealtimeClient, topic string) *RealtimeChanne
 // Perform callbacks on specific events. Successive calls to On()
 // will result in multiple callbacks acting at the event
 func (channel *RealtimeChannel) On(eventType string, filter map[string]string, callback func(any)) error {
+   eventType = strings.ToLower(eventType)
    if !verifyEventType(eventType) {
       return fmt.Errorf("invalid event type: %s", eventType)
    }
@@ -98,8 +100,10 @@ func (channel *RealtimeChannel) Subscribe(ctx context.Context) error {
       if !ok {
          panic("TYPE ASSERTION FAILED: expecting type postgresFilter")
       }
-      if change.Schema != bindingFilter.Schema || change.Event  != bindingFilter.Event ||
-         change.Table  != bindingFilter.Table  || change.Filter != bindingFilter.Filter {
+      if strings.ToLower(change.Schema) != strings.ToLower(bindingFilter.Schema) || 
+         strings.ToUpper(change.Event)  != strings.ToUpper(bindingFilter.Event)  ||
+         strings.ToLower(change.Table)  != strings.ToLower(bindingFilter.Table)  || 
+         strings.ToLower(change.Filter) != strings.ToLower(bindingFilter.Filter) {
          channel.Unsubscribe(ctx)
          return fmt.Errorf("Configuration mismatch between server's event and channel's event")
       }
@@ -143,7 +147,7 @@ func (channel *RealtimeChannel) routePostgresEvent(id int, payload *PostgresCDCP
    }
 
    // Match * | INSERT | UPDATE | DELETE
-   switch bindFilter.Event {
+   switch strings.ToUpper(bindFilter.Event) {
       case "*":
          fallthrough
       case payload.Data.ActionType:
