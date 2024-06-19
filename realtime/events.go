@@ -64,12 +64,12 @@ type CustomEvent struct {
 // Verify if the given event type is supported
 func verifyEventType(eventType string) bool {
 	switch eventType {
-	case presenceEventType:
-      fallthrough
-	case broadcastEventType:
-      fallthrough
-	case postgresChangesEventType:
-		return true
+      case presenceEventType:
+         fallthrough
+      case broadcastEventType:
+         fallthrough
+      case postgresChangesEventType:
+         return true
 	}
 
 	return false
