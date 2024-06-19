@@ -127,7 +127,7 @@ func (channel *RealtimeChannel) Unsubscribe(ctx context.Context) {
 }
 
 // Send a custom event to the server
-func (channel *RealtimeChannel) Send(event CustomEvent) error {
+func (channel *RealtimeChannel) Send(event CustomEvent, ctx context.Context) error {
    if !verifyEventType(event.Type) {
       return fmt.Errorf("Invalid event type: %s", event.Type)
    }
@@ -138,7 +138,7 @@ func (channel *RealtimeChannel) Send(event CustomEvent) error {
       Payload: event,
    }
    msg.Metadata.Ref = strconv.FormatInt(time.Now().Unix(), 10)
-   return channel.client.send(msg)
+   return channel.client.send(msg, ctx)
 }
 
 // Route the id of triggered event to appropriate callback

@@ -141,7 +141,7 @@ func (client *RealtimeClient) unsubscribe(topic string, ctx context.Context) {
 }
 
 // Send an event to the server
-func (client *RealtimeClient) send(msg *Msg) error {
+func (client *RealtimeClient) send(msg *Msg, ctx context.Context) error {
    var err error
    if !client.isClientAlive() {
       err = client.Connect()
@@ -151,7 +151,7 @@ func (client *RealtimeClient) send(msg *Msg) error {
       return err
    } 
 
-   err = wsjson.Write(context.Background(), client.conn, msg)
+   err = wsjson.Write(ctx, client.conn, msg)
    if err != nil {
       return fmt.Errorf("Unable to send the connection message: %v", err)
    }
