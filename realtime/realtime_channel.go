@@ -77,8 +77,12 @@ func (channel *RealtimeChannel) Subscribe(ctx context.Context) error {
    allBindings := make([]*binding, channel.numBindings)
    startIdx    := 0
    for _, eventType := range []string{postgresChangesEventType, broadcastEventType, presenceEventType} {
+      if startIdx >= channel.numBindings {
+         break
+      }
+
       copy(allBindings[startIdx:], channel.bindings[eventType])
-      startIdx += len(channel.bindings)
+      startIdx += len(channel.bindings[eventType])
    }
 
    respPayload, err := channel.client.subscribe(channel.topic, allBindings, ctx)
