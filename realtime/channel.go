@@ -15,7 +15,6 @@ type channel struct {
 	config            *ChannelConfig
 	client            *RealtimeClient
 	broadcastHandlers map[string]func(json.RawMessage)
-	presenceHandler   func(PresenceEvent)
 	postgresHandlers  map[string]func(PostgresChangeEvent)
 	callbacks         map[string][]interface{}
 	mu                sync.RWMutex
@@ -135,7 +134,7 @@ func (ch *channel) SendBroadcast(event string, payload interface{}) error {
 		Topic:   ch.topic,
 		Event:   event,
 		Payload: payload,
-		Ref:     ch.client.nextRef(),
+		Ref:     ch.client.NextRef(),
 	}
 
 	data, err := json.Marshal(broadcastMsg)
@@ -194,10 +193,6 @@ func (ch *channel) GetState() ChannelState {
 	ch.mu.RLock()
 	defer ch.mu.RUnlock()
 	return ch.state
-}
-
-func (ch *channel) updateAuth(token string) {
-	// Implementation for updating auth token
 }
 
 func (ch *channel) rejoin() error {

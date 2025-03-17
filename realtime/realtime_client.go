@@ -205,7 +205,7 @@ func (c *RealtimeClient) startHeartbeat() {
 	for {
 		select {
 		case <-c.hbTimer.C:
-			if err := c.sendHeartbeat(); err != nil {
+			if err := c.SendHeartbeat(); err != nil {
 				c.logger.Printf("Error sending heartbeat: %v", err)
 				if c.config.AutoReconnect {
 					go c.reconnect()
@@ -217,22 +217,25 @@ func (c *RealtimeClient) startHeartbeat() {
 	}
 }
 
-func (c *RealtimeClient) sendHeartbeat() error {
-	heartbeat := struct {
+// SendHeartbeat sends a heartbeat message to the server
+func (c *RealtimeClient) SendHeartbeat() error {
+	heartbeatMsg := struct {
 		Type  string `json:"type"`
 		Topic string `json:"topic"`
 		Event string `json:"event"`
+		Ref   int    `json:"ref"`
 	}{
 		Type:  "heartbeat",
 		Topic: "phoenix",
 		Event: "heartbeat",
+		Ref:   c.NextRef(),
 	}
-	data, err := json.Marshal(heartbeat)
+
+	data, err := json.Marshal(heartbeatMsg)
 	if err != nil {
 		return err
 	}
-	ctx := context.Background()
-	return c.conn.Write(ctx, websocket.MessageText, data)
+	return c.conn.Write(context.Background(), websocket.MessageText, data)
 }
 
 func (c *RealtimeClient) reconnect() {
@@ -279,7 +282,8 @@ func (c *RealtimeClient) reconnect() {
 	c.logger.Printf("Failed to reconnect after %d attempts", c.config.MaxRetries)
 }
 
-func (c *RealtimeClient) nextRef() int {
+// NextRef returns the next reference number for messages
+func (c *RealtimeClient) NextRef() int {
 	c.refMu.Lock()
 	defer c.refMu.Unlock()
 	c.ref++

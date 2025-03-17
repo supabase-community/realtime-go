@@ -1,4 +1,4 @@
-package realtime;
+package realtime
 
 // Channel Events
 const JOIN_EVENT = "phx_join"
@@ -12,7 +12,7 @@ const BROADCAST_EVENT = "broadcast"
 
 // Presence Events
 const PRESENCE_STATE_EVENT = "presence_state"
-const PRESENCE_DIFF_EVENT ="presence_diff"
+const PRESENCE_DIFF_EVENT = "presence_diff"
 
 // Other Events
 const SYS_EVENT = "system"

@@ -61,6 +61,9 @@ type IRealtimeClient interface {
 
 	// RemoveAllChannels removes all channels from the client
 	RemoveAllChannels() error
+
+	// ProcessMessage processes a single message from the WebSocket connection (for testing)
+	ProcessMessage(msg interface{})
 }
 
 // Channel represents a realtime channel for subscriptions
@@ -94,6 +97,9 @@ type Channel interface {
 
 	// GetState returns the current state of the channel
 	GetState() ChannelState
+
+	// GetTopic returns the channel's topic
+	GetTopic() string
 }
 
 // Message represents a realtime message
