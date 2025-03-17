@@ -2,7 +2,7 @@ package tests
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"sync"
 
 	"nhooyr.io/websocket"
@@ -16,6 +16,7 @@ type MockConn struct {
 	mu            sync.Mutex
 	readLimit     int64
 	writeLimit    int64
+	readError     error
 }
 
 // Close implements websocket.Conn.Close
@@ -31,22 +32,20 @@ func (c *MockConn) Read(ctx context.Context) (websocket.MessageType, []byte, err
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// If there's an error set, return it
+	if c.readError != nil {
+		return 0, nil, c.readError
+	}
+
 	if len(c.readMessages) == 0 {
-		return 0, nil, websocket.CloseError{
-			Code:   websocket.StatusNormalClosure,
-			Reason: "no more messages",
-		}
+		return 0, nil, fmt.Errorf("no messages to read")
 	}
 
 	msg := c.readMessages[0]
 	c.readMessages = c.readMessages[1:]
 
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	return websocket.MessageText, data, nil
+	// Return the message data directly
+	return websocket.MessageText, msg.([]byte), nil
 }
 
 // Write implements websocket.Conn.Write
@@ -54,12 +53,8 @@ func (c *MockConn) Write(ctx context.Context, messageType websocket.MessageType,
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	var msg interface{}
-	if err := json.Unmarshal(data, &msg); err != nil {
-		return err
-	}
-
-	c.writeMessages = append(c.writeMessages, msg)
+	// Store the actual string
+	c.writeMessages = append(c.writeMessages, string(data))
 	return nil
 }
 
@@ -83,7 +78,7 @@ func (c *MockConn) SetWriteLimit(limit int64) {
 }
 
 // AddReadMessage adds a message to be read by the connection
-func (c *MockConn) AddReadMessage(msg interface{}) {
+func (c *MockConn) AddReadMessage(msg []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.readMessages = append(c.readMessages, msg)
@@ -115,4 +110,12 @@ func (c *MockConn) IsClosed() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closed
+}
+
+// CloseWithError closes the connection with an error, used for testing error conditions
+func (m *MockConn) CloseWithError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.readError = err
+	m.closed = true
 }
